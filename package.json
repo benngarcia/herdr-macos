@@ -1,0 +1,7 @@
+{
+  "name": "herdr-macos",
+  "private": true,
+  "scripts": {
+    "test": "bun test"
+  }
+}

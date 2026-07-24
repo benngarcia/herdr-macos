@@ -1,0 +1,46 @@
+# Herdr.app terminal configuration.
+# The app sets XDG_CONFIG_HOME to a dedicated Herdr-only directory.
+command = /bin/zsh -l -c 'exec herdr'
+auto-update = off
+env = NO_COLOR=
+
+# macOS shortcuts adapted from https://venabl.es/herdr-macos-shortcuts for Herdr 0.7.5.
+keybind = cmd+t=text:\x02c
+keybind = cmd+n=text:\x02N
+keybind = cmd+KeyW=text:\x02x
+keybind = cmd+w=unbind
+keybind = cmd+shift+KeyW=text:\x02X
+keybind = cmd+shift+w=unbind
+keybind = cmd+KeyR=text:\x02T
+keybind = cmd+r=unbind
+keybind = cmd+shift+KeyR=text:\x02W
+keybind = cmd+shift+r=unbind
+keybind = cmd+KeyD=text:\x02v
+keybind = cmd+d=unbind
+keybind = cmd+shift+KeyD=text:\x02-
+keybind = cmd+shift+d=unbind
+keybind = cmd+shift+enter=text:\x02z
+keybind = cmd+alt+KeyH=text:\x02h
+keybind = cmd+alt+KeyJ=text:\x02j
+keybind = cmd+alt+KeyK=text:\x02k
+keybind = cmd+alt+KeyL=text:\x02l
+keybind = cmd+left_bracket=text:\x02i
+keybind = cmd+right_bracket=text:\x02u
+keybind = cmd+physical:one=text:\x021
+keybind = cmd+1=text:\x021
+keybind = cmd+physical:two=text:\x022
+keybind = cmd+2=text:\x022
+keybind = cmd+physical:three=text:\x023
+keybind = cmd+3=text:\x023
+keybind = cmd+physical:four=text:\x024
+keybind = cmd+4=text:\x024
+keybind = cmd+physical:five=text:\x025
+keybind = cmd+5=text:\x025
+keybind = cmd+physical:six=text:\x026
+keybind = cmd+6=text:\x026
+keybind = cmd+physical:seven=text:\x027
+keybind = cmd+7=text:\x027
+keybind = cmd+physical:eight=text:\x028
+keybind = cmd+8=text:\x028
+keybind = cmd+physical:nine=text:\x029
+keybind = cmd+9=text:\x029

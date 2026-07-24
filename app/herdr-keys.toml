@@ -1,0 +1,5 @@
+# Managed Herdr key overrides paired with Herdr.app's embedded Ghostty config.
+[keys]
+prefix = "ctrl+b"
+cycle_pane_previous = "prefix+i"
+cycle_pane_next = "prefix+u"
