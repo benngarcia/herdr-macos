@@ -48,7 +48,7 @@ async function fixture() {
     await executable(executablePath, "#!/usr/bin/env bash\nexit 0\n");
     await writeFile(
       path.join(app, "Contents", "Resources", "herdr.ghostty"),
-      "command = /bin/zsh -l -c 'exec herdr'\n",
+      "command = /bin/zsh -l -c 'unset NO_COLOR; exec herdr'\n",
     );
     return app;
   };
@@ -106,7 +106,7 @@ describe("Herdr macOS installer", () => {
     expect(
       await readFile(path.join(f.state, "xdg", "ghostty", "config"), "utf8"),
     ).toBe(
-      "command = /bin/zsh -l -c 'exec herdr'\n",
+      "command = /bin/zsh -l -c 'unset NO_COLOR; exec herdr'\n",
     );
 
     await f.run("--rollback");
@@ -188,8 +188,8 @@ describe("Herdr macOS installer", () => {
     expect(source).toContain("orderFrontStandardAboutPanel:");
     expect(source).toContain("png2icns");
     expect(config).not.toContain("config-default-files");
-    expect(config).toContain("command = /bin/zsh -l -c 'exec herdr'");
-    expect(config).toContain("env = NO_COLOR=");
+    expect(config).toContain("command = /bin/zsh -l -c 'unset NO_COLOR; exec herdr'");
+    expect(config).not.toContain("env = NO_COLOR=");
     expect(source).toContain('set_plist "$plist" CFBundleExecutable ghostty');
     expect(source).toContain("LSEnvironment:XDG_CONFIG_HOME");
     expect(source).toContain("herdr config reset-keys");

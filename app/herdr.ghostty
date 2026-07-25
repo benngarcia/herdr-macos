@@ -1,8 +1,10 @@
 # Herdr.app terminal configuration.
 # The app sets XDG_CONFIG_HOME to a dedicated Herdr-only directory.
-command = /bin/zsh -l -c 'exec herdr'
+# NO_COLOR is unset inside the launch command: Ghostty's own `env` setting only
+# adds variables to the inherited environment, so it cannot clear an inherited
+# one, and a stale value would strip color from Claude and other terminal apps.
+command = /bin/zsh -l -c 'unset NO_COLOR; exec herdr'
 auto-update = off
-env = NO_COLOR=
 
 # macOS shortcuts adapted from https://venabl.es/herdr-macos-shortcuts for Herdr 0.7.5.
 keybind = cmd+t=text:\x02c

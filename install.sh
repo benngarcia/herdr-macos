@@ -109,7 +109,8 @@ verify_app() {
     printf 'Herdr terminal configuration must rely on its isolated XDG root.\n' >&2
     return 1
   fi
-  grep -Fxq "command = /bin/zsh -l -c 'exec herdr'" "$app/Contents/Resources/herdr.ghostty" || {
+  grep -Fxq "command = /bin/zsh -l -c 'unset NO_COLOR; exec herdr'" \
+    "$app/Contents/Resources/herdr.ghostty" || {
     printf 'Herdr terminal configuration does not start Herdr.\n' >&2
     return 1
   }
