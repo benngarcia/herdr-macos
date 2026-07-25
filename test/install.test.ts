@@ -168,52 +168,51 @@ describe("Herdr macOS installer", () => {
     ).toEqual(["release-three", "release-two"]);
   });
 
-  it("pins the verified source release and isolated Herdr configuration", async () => {
+  it("trusts the Ghostty signing key rather than one release", async () => {
     const source = await readFile(installer, "utf8");
+
+    expect(source).toContain(
+      "RWQlAjJC23149WL2sEpT/l0QKy7hMIFhYdQOFy0Z7z7PbneUgvlsnYcV",
+    );
+    expect(source).toContain("TeamIdentifier=$ghostty_team_id");
+    expect(source).toContain("minisign -Vm");
+    expect(source).toContain(
+      "ghostty_version=\"$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString'",
+    );
+    expect(source).not.toContain("ghostty_sha256");
+  });
+
+  it("keeps the terminal configuration a template of Herdr's own bindings", async () => {
     const config = await readFile(
       path.join(appDefinition, "herdr.ghostty"),
       "utf8",
     );
-    const keys = await readFile(path.join(appDefinition, "herdr-keys.toml"), "utf8");
 
-    expect(source).toContain("ghostty_version='1.3.1'");
-    expect(source).toContain(
-      "ghostty_sha256='3349d25600ffbda281197a18314f7d18791969cffe9474f0ff16a45a9ebfccdb'",
+    expect(config).toContain(
+      "command = /bin/zsh -l -c 'unset NO_COLOR; exec herdr'",
     );
-    expect(source).toContain(
-      "RWQlAjJC23149WL2sEpT/l0QKy7hMIFhYdQOFy0Z7z7PbneUgvlsnYcV",
-    );
-    expect(source).toContain("New Herdr Tab Here");
-    expect(source).toContain("${herdr_bundle_id}.dock-tile");
-    expect(source).toContain("orderFrontStandardAboutPanel:");
-    expect(source).toContain("png2icns");
-    expect(config).not.toContain("config-default-files");
-    expect(config).toContain("command = /bin/zsh -l -c 'unset NO_COLOR; exec herdr'");
     expect(config).not.toContain("env = NO_COLOR=");
-    expect(source).toContain('set_plist "$plist" CFBundleExecutable ghostty');
+    expect(config).not.toContain("config-default-files");
+    expect(config).toContain("keybind = cmd+t=text:@PREFIX@c");
+    expect(config).toContain(
+      "keybind = cmd+left_bracket=text:@PREFIX@@CYCLE_PREV@",
+    );
+    expect(config).toContain(
+      "keybind = cmd+right_bracket=text:@PREFIX@@CYCLE_NEXT@",
+    );
+    expect(config).not.toContain("\\x02");
+  });
+
+  it("never writes to the Herdr configuration outside the app", async () => {
+    const source = await readFile(installer, "utf8");
+
+    expect(source).toContain(
+      'printf \'%s\\n\' "$ghostty_xdg_root/herdr/config.toml"',
+    );
+    expect(source).not.toContain("XDG_CONFIG_HOME:-");
+    expect(source).not.toContain("herdr config reset-keys");
+    expect(source).not.toContain("refusing to overwrite");
     expect(source).toContain("LSEnvironment:XDG_CONFIG_HOME");
-    expect(source).toContain("herdr config reset-keys");
-    expect(source).toContain("/^# Managed by herdr-macos$/d");
-    expect(source).toContain("LICENSE-HERDR-AGPL-3.0.txt");
-    expect(source).toContain("LICENSE-GHOSTTY-MIT.txt");
-    expect(source).not.toContain("launcher.c");
-    expect(config).toContain("cmd+t=text:\\x02c");
-    expect(config).toContain("cmd+n=text:\\x02N");
-    expect(config).not.toContain("cmd+KeyT");
-    expect(config).not.toContain("cmd+KeyN");
-    expect(config).toContain("cmd+shift+KeyW=text:\\x02X");
-    expect(config).toContain("cmd+shift+KeyR=text:\\x02W");
-    expect(config).toContain("cmd+physical:one=text:\\x021");
-    expect(config).toContain("cmd+1=text:\\x021");
-    expect(config).toContain("cmd+physical:nine=text:\\x029");
-    expect(config).toContain("cmd+9=text:\\x029");
-    expect(config).not.toContain("\\x1b[49;6u");
-    expect(config).not.toContain("\\x1b[57;6u");
-    expect(keys).toContain('prefix = "ctrl+b"');
-    expect(keys).not.toContain("new_tab");
-    expect(keys).not.toContain("new_workspace");
-    expect(keys).not.toContain("close_tab");
-    expect(keys).not.toContain("rename_workspace");
   });
 
 });

@@ -1,6 +1,8 @@
 # Third-party software
 
-Herdr.app uses Ghostty 1.3.1 as its terminal implementation.
+Herdr.app uses Ghostty as its terminal implementation, in whichever version was
+installed on the Mac that built this bundle. The exact version is recorded in
+`NSHumanReadableCopyright` in the bundle's `Info.plist`.
 
 - Source: https://github.com/ghostty-org/ghostty
 - License: MIT

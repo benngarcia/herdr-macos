@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ghostty_version='1.3.1'
-ghostty_sha256='3349d25600ffbda281197a18314f7d18791969cffe9474f0ff16a45a9ebfccdb'
 ghostty_minisign_key='RWQlAjJC23149WL2sEpT/l0QKy7hMIFhYdQOFy0Z7z7PbneUgvlsnYcV'
 ghostty_bundle_id='com.mitchellh.ghostty'
 ghostty_team_id='24VZTF6M5V'
 herdr_bundle_id='dev.bengarcia.herdr'
+# Read from the installed Ghostty, because the menu bar is compiled from that
+# release's own MainMenu.xib and has to match the binary it runs against.
+ghostty_version=''
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 definition_dir="$repo_root/app"
@@ -27,8 +28,8 @@ usage() {
     '  ./install.sh --rollback [RELEASE_ID] [options]' \
     '  ./install.sh --verify [options]' \
     '' \
-    'Builds Herdr.app from the pinned, signed Ghostty application already' \
-    'installed at /Applications/Ghostty.app, signs it locally, and activates' \
+    'Builds Herdr.app from the signed Ghostty application already installed' \
+    'at /Applications/Ghostty.app, signs it locally, and activates' \
     "$HOME/Applications/Herdr.app. The prior release remains available for rollback." \
     '' \
     'Options:' \
@@ -82,11 +83,13 @@ if ! mkdir "$lock_dir" 2>/dev/null; then
 fi
 
 stage_dir=''
+build_dir=''
 next_app=''
 prior_app=''
 config_next=''
 cleanup() {
   [[ -z "$stage_dir" ]] || rm -rf "$stage_dir"
+  [[ -z "$build_dir" ]] || rm -rf "$build_dir"
   [[ -z "$next_app" ]] || rm -rf "$next_app"
   [[ -z "$prior_app" ]] || rm -rf "$prior_app"
   [[ -z "$config_next" ]] || rm -f "$config_next"
@@ -299,10 +302,6 @@ verified_ghostty_source() {
     curl --fail --location --output "$signature" \
       "https://release.files.ghostty.org/${ghostty_version}/ghostty-${ghostty_version}.tar.gz.minisig"
   fi
-  [[ "$(shasum -a 256 "$archive" | cut -d' ' -f1)" == "$ghostty_sha256" ]] || {
-    printf 'Ghostty source archive digest does not match the pin.\n' >&2
-    return 1
-  }
   command -v minisign >/dev/null || { printf 'Homebrew minisign is required.\n' >&2; return 1; }
   minisign -Vm "$archive" -x "$signature" -P "$ghostty_minisign_key" >/dev/null
   if [[ ! -f "$source/macos/Sources/App/macOS/MainMenu.xib" ]]; then
@@ -319,7 +318,7 @@ verified_ghostty_source() {
 }
 
 compile_main_menu() {
-  local app="$1" source="$2" xib="$stage_dir/MainMenu.xib"
+  local app="$1" source="$2" xib="$build_dir/MainMenu.xib"
   cp "$source/macos/Sources/App/macOS/MainMenu.xib" "$xib"
   sed -i '' \
     -e 's/title="Ghostty"/title="Herdr"/g' \
@@ -331,32 +330,98 @@ compile_main_menu() {
     -e 's/selector="showAbout:"/selector="orderFrontStandardAboutPanel:"/' \
     "$xib"
   sed -i '' '/<menuItem title="Check for Updates\.\.\."/,/<\/menuItem>/d' "$xib"
+  ! grep -q 'title="[^"]*Ghostty' "$xib" || {
+    printf 'Ghostty %s renamed its menu titles; update compile_main_menu:\n' \
+      "$ghostty_version" >&2
+    grep -o 'title="[^"]*Ghostty[^"]*"' "$xib" | sort -u >&2
+    return 1
+  }
   ibtool --compile "$app/Contents/Resources/MainMenu.nib" "$xib"
 }
 
-install_herdr_keys() {
-  [[ "${HERDR_MACOS_INSTALLER_TESTING:-0}" != 1 ]] || return 0
-  local config_dir="${XDG_CONFIG_HOME:-${HOME}/.config}/herdr"
-  local config="$config_dir/config.toml"
-  mkdir -p "$config_dir"
-  touch "$config"
-  if grep -Eq '^[[:space:]]*\[keys\][[:space:]]*$' "$config"; then
-    grep -Fq 'Managed by herdr-macos' "$config" || {
-      printf 'Herdr already has an unmanaged [keys] table at %s; refusing to overwrite it.\n' "$config" >&2
-      return 1
+herdr_app_config() {
+  printf '%s\n' "$ghostty_xdg_root/herdr/config.toml"
+}
+
+# Add one key to the [keys] table without touching a value that is already set.
+seed_herdr_key() {
+  local config="$1" key="$2" value="$3"
+  grep -Eq "^[[:space:]]*${key}[[:space:]]*=" "$config" && return 0
+  config_next="$config.next.$$"
+  awk -v line="$key = \"$value\"" '
+    /^[[:space:]]*\[keys\][[:space:]]*$/ && !seeded { print; print line; seeded = 1; next }
+    { print }
+    END {
+      if (!seeded) {
+        print ""
+        print "# Seeded by herdr-macos. Yours to edit; the installer only fills in"
+        print "# keys that are missing and never rewrites one you have set."
+        print "[keys]"
+        print line
+      }
     }
-    herdr config reset-keys >/dev/null
-    config_next="$config.next.$$"
-    sed '/^# Managed by herdr-macos$/d' "$config" > "$config_next"
-    mv -f "$config_next" "$config"
-    config_next=''
+  ' "$config" > "$config_next"
+  mv -f "$config_next" "$config"
+  config_next=''
+}
+
+install_herdr_keys() {
+  local config
+  config="$(herdr_app_config)"
+  mkdir -p "$(dirname "$config")"
+  [[ -f "$config" ]] || : > "$config"
+  local pair
+  # Reverse order: each key is inserted directly under [keys], so the file ends
+  # up reading prefix first.
+  for pair in cycle_pane_next=prefix+u cycle_pane_previous=prefix+i prefix=ctrl+b; do
+    seed_herdr_key "$config" "${pair%%=*}" "${pair#*=}"
+  done
+  [[ "${HERDR_MACOS_INSTALLER_TESTING:-0}" != 1 ]] || return 0
+  XDG_CONFIG_HOME="$ghostty_xdg_root" herdr config check
+  XDG_CONFIG_HOME="$ghostty_xdg_root" herdr server reload-config >/dev/null 2>&1 || true
+}
+
+# The Cmd shortcuts type Herdr's prefix, so they have to send whichever control
+# byte the prefix is bound to. Empty output means the prefix cannot be typed as
+# one byte and the shortcuts have to be left out.
+herdr_prefix_byte() {
+  local config prefix
+  config="$(herdr_app_config)"
+  prefix="$(
+    sed -n 's/^[[:space:]]*prefix[[:space:]]*=[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' \
+      "$config" | tail -1
+  )"
+  [[ "$prefix" =~ ^ctrl\+[a-z]$ ]] || return 0
+  printf '%02x' "$(( $(printf '%d' "'${prefix#ctrl+}") - 96 ))"
+}
+
+# The key a prefix action is bound to, when it is a single typeable character.
+herdr_action_key() {
+  local action="$1" key
+  key="$(
+    sed -n "s/^[[:space:]]*${action}[[:space:]]*=[[:space:]]*\"prefix+\(.\)\"[[:space:]]*\$/\1/p" \
+      "$(herdr_app_config)" | tail -1
+  )"
+  printf '%s' "$key"
+}
+
+render_terminal_config() {
+  local template="$1" destination="$2" byte
+  byte="$(herdr_prefix_byte)"
+  if [[ -z "$byte" ]]; then
+    printf 'Herdr binds its prefix to something that cannot be typed as one byte, so this build has no Mac shortcuts.\n' >&2
+    grep -v '^keybind = ' "$template" > "$destination"
+    return 0
   fi
-  {
-    printf '\n# Managed by herdr-macos\n'
-    sed '1{/^# Managed Herdr key overrides/d;}' "$definition_dir/herdr-keys.toml"
-  } >> "$config"
-  herdr config check
-  herdr server reload-config >/dev/null 2>&1 || true
+  sed -e "s/@PREFIX@/\\\\x$byte/g" \
+    -e "s/@CYCLE_PREV@/$(herdr_action_key cycle_pane_previous)/g" \
+    -e "s/@CYCLE_NEXT@/$(herdr_action_key cycle_pane_next)/g" \
+    "$template" > "$destination"
+  ! grep -q '@[A-Z_]*@' "$destination" || {
+    printf 'Herdr does not bind pane cycling to a key the shortcuts can type.\n' >&2
+    grep -n '@[A-Z_]*@' "$destination" >&2
+    return 1
+  }
 }
 
 set_plist() {
@@ -405,13 +470,18 @@ brand_bundle_metadata() {
 
 build_app() {
   local ghostty_app='/Applications/Ghostty.app'
-  [[ -d "$ghostty_app" ]] || { printf 'Install Ghostty.app 1.3.1 first.\n' >&2; exit 1; }
+  [[ -d "$ghostty_app" ]] || { printf 'Install Ghostty.app first.\n' >&2; exit 1; }
   [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$ghostty_app/Contents/Info.plist")" == "$ghostty_bundle_id" ]] || {
     printf 'The source application is not official Ghostty.\n' >&2
     exit 1
   }
-  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ghostty_app/Contents/Info.plist")" == "$ghostty_version" ]] || {
-    printf 'Ghostty.app must be version %s.\n' "$ghostty_version" >&2
+  ghostty_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ghostty_app/Contents/Info.plist")"
+  [[ "$ghostty_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+    printf 'Ghostty.app reports an unusable version: %s\n' "$ghostty_version" >&2
+    exit 1
+  }
+  command -v herdr >/dev/null || {
+    printf 'Herdr is required: https://herdr.dev/docs/install/\n' >&2
     exit 1
   }
   codesign --verify --deep --strict "$ghostty_app"
@@ -427,14 +497,17 @@ build_app() {
   local ghostty_source
   ghostty_source="$(verified_ghostty_source)"
 
-  stage_dir="$(mktemp -d "$release_root/.build.XXXXXX")"
-  local app="$stage_dir/$app_name"
+  install_herdr_keys
+
+  build_dir="$(mktemp -d "$release_root/.build.XXXXXX")"
+  local app="$build_dir/$app_name"
   ditto --rsrc --extattr "$ghostty_app" "$app"
-  cp "$definition_dir/herdr.ghostty" "$app/Contents/Resources/herdr.ghostty"
+  render_terminal_config "$definition_dir/herdr.ghostty" \
+    "$app/Contents/Resources/herdr.ghostty"
   cp "$definition_dir/THIRD_PARTY.md" "$app/Contents/Resources/THIRD_PARTY.md"
   cp "$repo_root/LICENSE" "$app/Contents/Resources/LICENSE-HERDR-AGPL-3.0.txt"
   cp "$ghostty_source/LICENSE" "$app/Contents/Resources/LICENSE-GHOSTTY-MIT.txt"
-  build_icon "$app/Contents/Resources" "$stage_dir/Herdr-icons"
+  build_icon "$app/Contents/Resources" "$build_dir/Herdr-icons"
   compile_main_menu "$app" "$ghostty_source"
 
   local plist="$app/Contents/Info.plist"
@@ -456,17 +529,18 @@ build_app() {
 
   local definition_digest
   definition_digest="$(
-    shasum -a 256 \
-      "$definition_dir/herdr.ghostty" \
-      "$definition_dir/herdr-keys.toml" \
-      "$definition_dir/Herdr.svg" \
-      "$0" |
+    {
+      shasum -a 256 \
+        "$definition_dir/herdr.ghostty" \
+        "$definition_dir/Herdr.svg" \
+        "$0"
+      cat "$app/Contents/Resources/herdr.ghostty"
+    } |
       shasum -a 256 |
       cut -c1-12
   )"
   release_id="ghostty-${ghostty_version}-${definition_digest}"
   source_app="$app"
-  install_herdr_keys
   install_app
 }
 
