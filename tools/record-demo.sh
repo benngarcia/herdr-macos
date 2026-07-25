@@ -7,11 +7,17 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 output="${1:-$repo_root/docs/demo.gif}"
-herdr_bundle_id='dev.bengarcia.herdr'
+installed_app="${HOME}/Applications/Herdr.app"
 ghostty_bundle_id='com.mitchellh.ghostty'
 seconds=17
+recorder=''
 work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
+
+cleanup() {
+  [[ -z "$recorder" ]] || kill "$recorder" 2>/dev/null || true
+  rm -rf "$work"
+}
+trap cleanup EXIT INT TERM
 
 fail() { printf '%s\n' "$1" >&2; exit 1; }
 
@@ -21,6 +27,7 @@ settings_pane() {
 
 [[ "$(printf '%s' "${__CFBundleIdentifier:-}" | tr 'A-Z' 'a-z')" != *herdr* ]] ||
   fail 'Run this from Ghostty or Terminal. It quits Herdr.app, which would kill this session.'
+[[ -d "$installed_app" ]] || fail "No app to record: $installed_app is missing."
 
 # screencapture reports a blocked display on stdout and still exits 0, so the
 # only reliable probe is whether a frame came out.
@@ -34,38 +41,53 @@ osascript -e 'tell application "System Events" to key code 63' >/dev/null 2>&1 |
   fail 'Grant Accessibility to this terminal, then run again.'
 }
 
-open -b "$ghostty_bundle_id"
-osascript -e "tell application id \"$herdr_bundle_id\" to quit" >/dev/null 2>&1 || true
-sleep 2
+# Quit whatever identifier the installed bundle actually carries, so a Herdr
+# built before an identifier change still gets closed.
+quit_herdr() {
+  local id
+  id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+    "$installed_app/Contents/Info.plist" 2>/dev/null || true)"
+  [[ -z "$id" ]] || osascript -e "tell application id \"$id\" to quit" >/dev/null 2>&1 || true
+  local _
+  for _ in 1 2 3 4 5; do
+    pgrep -f "$installed_app/Contents/MacOS/ghostty" >/dev/null 2>&1 || return 0
+    sleep 1
+  done
+  pkill -f "$installed_app/Contents/MacOS/ghostty" 2>/dev/null || true
+  sleep 1
+}
 
-printf 'Recording %s seconds. Keep your hands off the keyboard.\n' "$seconds"
+open -b "$ghostty_bundle_id"
+quit_herdr
+
+printf 'Recording the main display for %s seconds. Hands off the keyboard.\n' "$seconds"
 screencapture -v -V "$seconds" -k -x "$work/demo.mov" &
 recorder=$!
 sleep 2
 
 osascript <<'APPLESCRIPT'
-on pause(seconds)
-  delay seconds
-end pause
-
 tell application "System Events"
   key code 49 using command down -- Spotlight
-  pause(1)
+  delay 1
   keystroke "Herdr"
-  pause(2)
+  delay 2
   key code 36 -- open the app
-  pause(4)
+  delay 5
   keystroke "t" using command down -- a Herdr tab
-  pause(3)
+  delay 3
 end tell
 
 tell application id "com.mitchellh.ghostty" to activate
-pause(2)
-tell application "System Events" to keystroke "t" using command down -- a Ghostty tab
-pause(2)
+delay 2
+tell application "System Events"
+  keystroke "t" using command down -- a Ghostty tab
+  delay 2
+end tell
 APPLESCRIPT
 
 wait "$recorder"
+recorder=''
+[[ -s "$work/demo.mov" ]] || fail 'The recording produced no video.'
 
 mkdir -p "$(dirname "$output")"
 ffmpeg -hide_banner -loglevel error -i "$work/demo.mov" \
