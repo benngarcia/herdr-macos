@@ -205,13 +205,22 @@ activate() {
   verify_app "$next_app"
 
   if [[ "$launch_after" == true ]]; then
-    osascript -e "tell application id \"$herdr_bundle_id\" to quit" >/dev/null 2>&1 || true
+    # Quit whatever identifier the installed bundle carries, not the one this
+    # script builds, so an app installed before an identifier change still goes.
+    local running_id
+    running_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+      "$canonical_app/Contents/Info.plist" 2>/dev/null || printf '%s' "$herdr_bundle_id")"
+    local quit_error
+    quit_error="$(osascript -e "tell application id \"$running_id\" to quit" 2>&1 >/dev/null || true)"
     for _ in 1 2 3 4 5 6 7 8 9 10; do
       pgrep -f '/Herdr\.app/Contents/(MacOS/ghostty|Helpers/Herdr)' >/dev/null 2>&1 || break
       sleep 1
     done
     if pgrep -f '/Herdr\.app/Contents/(MacOS/ghostty|Helpers/Herdr)' >/dev/null 2>&1; then
-      printf 'Herdr did not quit; the release was not switched.\n' >&2
+      printf 'Herdr did not quit, so the release was not switched.\n' >&2
+      [[ -z "$quit_error" ]] ||
+        printf 'Quitting it reported: %s\n' "$quit_error" >&2
+      printf 'Quit Herdr yourself and run this again, or use --no-launch to stage the release for the next launch.\n' >&2
       return 1
     fi
   fi

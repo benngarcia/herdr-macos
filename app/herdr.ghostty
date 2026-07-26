@@ -6,6 +6,11 @@
 command = /bin/zsh -l -c 'unset NO_COLOR; exec herdr'
 auto-update = off
 
+# Anything in local.conf next to this file wins and survives reinstalls, which
+# is where personal keybinds and plugin shortcuts belong. The leading ? makes
+# it optional.
+config-file = ?local.conf
+
 # @PREFIX@ is Herdr's prefix key as a control byte and @CYCLE_*@ are the keys
 # it binds pane cycling to, both read from Herdr's own config at build time.
 # macOS shortcuts adapted from https://venabl.es/herdr-macos-shortcuts for Herdr 0.7.5.
